@@ -184,6 +184,7 @@ export interface TMDBMovie {
   first_air_date?: string;
   genre_ids?: number[];
   media_type?: "movie" | "tv";
+  original_language?: string;
 }
 
 export const MEDIA_TYPES: MediaType[] = ["Filme", "Série"];

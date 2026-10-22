@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Clapperboard, Search, Star } from "lucide-react";
 import type { Genre, MediaItem, MediaStatus, MediaType } from "../types";
 import { MediaCard } from "./MediaCard";
 import { StatusTabs } from "./StatusTabs";
 import { useWheelScroll } from "../hooks/useWheelScroll";
+import { ANIMATION_GENRE_ID, useAnimeIds } from "../hooks/useAnimeIds";
 
 type SortBy = "recent" | "rating" | "title";
 type ProgFilter = "Todos" | MediaType | "Favoritos";
+// TMDB genre id, or one of the two halves "Animação" is split into.
+type GenreKey = number | "desenho" | "anime";
 
 const SORT_OPTIONS: { value: SortBy; label: string }[] = [
   { value: "recent", label: "Adicionado recentemente" },
@@ -34,6 +37,7 @@ interface ProgramasTabProps {
 
 export function ProgramasTab({
   items,
+  genres,
   onStatusChange,
   onRatingChange,
   onEdit,
@@ -44,8 +48,11 @@ export function ProgramasTab({
 }: ProgramasTabProps) {
   const chipsRowRef = useWheelScroll();
   const rowRef = useWheelScroll();
+  const genreRowRef = useWheelScroll();
+  const animeIds = useAnimeIds(items);
   const [activeStatus, setActiveStatus] = useState<MediaStatus>("Assistindo");
   const [progFilter, setProgFilter] = useState<ProgFilter>("Todos");
+  const [genreFilter, setGenreFilter] = useState<GenreKey | null>(null);
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortBy>("recent");
 
@@ -94,6 +101,45 @@ export function ProgramasTab({
     [statusItems]
   );
 
+  const genreKeysOf = useCallback(
+    (item: MediaItem): GenreKey[] =>
+      (item.genreIds ?? []).map((gid) =>
+        gid === ANIMATION_GENRE_ID ? (animeIds.has(item.id) ? "anime" : "desenho") : gid
+      ),
+    [animeIds]
+  );
+
+  const genreChips = useMemo(() => {
+    const counts = new Map<GenreKey, number>();
+    for (const item of statusItems) {
+      for (const key of new Set(genreKeysOf(item))) {
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    return [...counts.entries()]
+      .map(([key, count]) => ({
+        key,
+        count,
+        name:
+          key === "anime"
+            ? "Anime"
+            : key === "desenho"
+              ? "Desenho"
+              : genres.find((g) => g.id === key)?.name,
+      }))
+      .filter((chip): chip is { key: GenreKey; count: number; name: string } => Boolean(chip.name))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }, [statusItems, genreKeysOf, genres]);
+
+  // A genre picked on another status tab may not exist here — fall back to
+  // "all genres" instead of showing an empty list.
+  const activeGenre = genreChips.some((c) => c.key === genreFilter) ? genreFilter : null;
+
+  const matchesGenre = useCallback(
+    (item: MediaItem) => activeGenre === null || genreKeysOf(item).includes(activeGenre),
+    [activeGenre, genreKeysOf]
+  );
+
   const heroItem = useMemo(() => {
     if (activeStatus !== "Assistindo") return null;
     const withProgress = statusItems.find(
@@ -105,8 +151,11 @@ export function ProgramasTab({
   const showSeriesRow = activeStatus === "Assistindo" && progFilter === "Todos";
 
   const seriesInProgress = useMemo(
-    () => (showSeriesRow ? statusItems.filter((i) => i.type === "Série" && i.id !== heroItem?.id) : []),
-    [showSeriesRow, statusItems, heroItem]
+    () =>
+      showSeriesRow
+        ? statusItems.filter((i) => i.type === "Série" && i.id !== heroItem?.id && matchesGenre(i))
+        : [],
+    [showSeriesRow, statusItems, heroItem, matchesGenre]
   );
 
   const filteredItems = useMemo(() => {
@@ -116,6 +165,7 @@ export function ProgramasTab({
         if (progFilter === "Favoritos") return item.isFavorite;
         return item.type === progFilter;
       })
+      .filter(matchesGenre)
       .filter((item) => item.title.toLowerCase().includes(query.trim().toLowerCase()));
 
     const sorted = [...filtered];
@@ -130,7 +180,7 @@ export function ProgramasTab({
     else if (sortBy === "title") sorted.sort((a, b) => a.title.localeCompare(b.title));
     else sorted.sort((a, b) => b.createdAt - a.createdAt);
     return sorted;
-  }, [statusItems, progFilter, query, sortBy]);
+  }, [statusItems, progFilter, matchesGenre, query, sortBy]);
 
   const isFavoritesView = progFilter === "Favoritos";
 
@@ -155,6 +205,11 @@ export function ProgramasTab({
     { key: "Série", label: `Séries (${filterCounts.Série})` },
     { key: "Filme", label: `Filmes (${filterCounts.Filme})` },
     { key: "Favoritos", label: "Favoritos" },
+  ];
+
+  const genreOptions: { key: GenreKey | null; label: string }[] = [
+    { key: null, label: "Todos os gêneros" },
+    ...genreChips.map((c) => ({ key: c.key, label: `${c.name} (${c.count})` })),
   ];
 
   return (
@@ -220,6 +275,28 @@ export function ProgramasTab({
           <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-linear-to-l from-[#0e0c0a] to-transparent lg:hidden" />
         </div>
       </div>
+
+      {genreChips.length > 0 && (
+        <div className="relative">
+          <div ref={genreRowRef} className="no-scrollbar flex gap-2 overflow-x-auto">
+            {genreOptions.map(({ key, label }) => (
+              <button
+                key={key ?? "all"}
+                onClick={() => setGenreFilter(key === activeGenre ? null : key)}
+                aria-pressed={activeGenre === key}
+                className={`flex min-h-9 shrink-0 items-center rounded-full border px-3.5 py-1.5 text-xs font-medium transition ${
+                  activeGenre === key
+                    ? "border-[#a32638] bg-[#a32638]/10 text-[#bd3347]"
+                    : "border-stone-800 bg-stone-900 text-stone-400 hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-linear-to-l from-[#0e0c0a] to-transparent" />
+        </div>
+      )}
 
       {seriesInProgress.length > 0 && (
         <section className="space-y-3">

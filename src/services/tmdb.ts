@@ -234,6 +234,14 @@ export async function getDetails(
   return { ...details, media_type: mediaType };
 }
 
+// Lightweight details fetch (no appended credits/providers) — used to tell
+// anime (Japanese-language animation) apart from other animation, since
+// TMDB has no dedicated "Anime" genre.
+export async function getOriginalLanguage(id: number, mediaType: "movie" | "tv"): Promise<string> {
+  const details = await tmdbFetch<{ original_language?: string }>(`/${mediaType}/${id}`);
+  return details.original_language ?? "";
+}
+
 export function getPosterUrl(path: string | null | undefined, size = "w500"): string | null {
   return path ? `https://image.tmdb.org/t/p/${size}${path}` : null;
 }
