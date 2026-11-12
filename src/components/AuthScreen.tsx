@@ -113,7 +113,7 @@ function Showcase({ trending }: { trending: TMDBMovie[] }) {
         <span className="grid h-9 w-9 place-items-center rounded-lg bg-[#a32638] shadow-lg shadow-[#a32638]/30">
           <Clapperboard size={18} className="text-white" />
         </span>
-        <span className="font-display text-xl font-semibold tracking-tight text-white">Catalog</span>
+        <span className="font-display text-xl font-semibold tracking-tight text-white">Case</span>
       </div>
 
       <div className="hidden max-w-xl lg:block">
