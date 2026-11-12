@@ -96,6 +96,14 @@ async function signInAs(email, password) {
     log('user CANNOT change own status', !!unsuspendErr, unsuspendErr?.message);
     const { data: authB } = await admin.auth.admin.getUserById(uidB);
     log('suspension bans the auth user', !!authB?.user?.banned_until, authB?.user?.banned_until);
+    const { error: suspendedWriteErr } = await clientB.from('catalog_items').insert({
+      id: `smoke-susp-${suffix}`, owner_uid: uidB, title: 'x', type: 'Filme', status: 'Visto', cover_url: 'x',
+    });
+    log('suspended user CANNOT write (live token)', !!suspendedWriteErr, suspendedWriteErr?.message);
+    const { error: fakeEmailErr } = await clientB.from('profiles').update({ email: 'fake@example.com' }).eq('id', uidB);
+    log('user CANNOT fake profile email', !!fakeEmailErr, fakeEmailErr?.message);
+    const { error: emailOracleErr } = await clientB.rpc('is_admin_email', { email: emailA });
+    log('is_admin_email NOT callable via RPC', !!emailOracleErr, emailOracleErr?.message);
     await admin.from('profiles').update({ status: 'active' }).eq('id', uidB);
     const { data: authB2 } = await admin.auth.admin.getUserById(uidB);
     log('reactivation lifts the ban', !authB2?.user?.banned_until || new Date(authB2.user.banned_until) < new Date(), authB2?.user?.banned_until);

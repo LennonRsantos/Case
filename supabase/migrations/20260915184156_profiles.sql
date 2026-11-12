@@ -48,7 +48,7 @@ returns boolean
 language sql
 immutable
 as $$
-  select email = 'lennonreis619@gmail.com';
+  select email = 'owner@example.com';
 $$;
 
 -- Generates a stable handle like "@L7nnoca" for a new signup, mirroring the

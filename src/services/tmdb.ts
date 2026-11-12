@@ -2,8 +2,8 @@ import type { Genre, TMDBMovie } from "../types";
 
 export type TmdbMovie = TMDBMovie;
 
-const TMDB_BASE_URL = "https://api.themoviedb.org/3";
-const READ_ACCESS_TOKEN = import.meta.env.VITE_TMDB_READ_ACCESS_TOKEN;
+// Goes through the supabase/functions/tmdb proxy so the TMDB token never reaches the browser.
+const TMDB_BASE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tmdb`;
 
 export class TmdbApiError extends Error {
   status: number;
@@ -27,10 +27,7 @@ async function tmdbFetch<T>(path: string, params?: Record<string, string>): Prom
   let res: Response;
   try {
     res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${READ_ACCESS_TOKEN}`,
-        Accept: "application/json",
-      },
+      headers: { Accept: "application/json" },
     });
   } catch (err) {
     throw new TmdbApiError(0, err instanceof Error ? err.message : "network_error");

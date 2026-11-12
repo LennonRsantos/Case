@@ -95,3 +95,99 @@ revoke select on public.follows from anon;
 update storage.buckets
   set allowed_mime_types = array['image/png', 'image/jpeg', 'image/webp', 'image/gif']
   where id in ('avatars', 'covers');
+
+-- 8. Owner email lives only in the database, never in git. `private` is not
+-- exposed by the Data API. Seeded from whoever is already owner, so no
+-- literal email is committed anywhere.
+create schema if not exists private;
+revoke all on schema private from public, anon, authenticated;
+
+create table if not exists private.owner_emails (email text primary key);
+
+insert into private.owner_emails
+  select lower(email) from public.profiles where role = 'owner'
+  on conflict do nothing;
+
+create or replace function public.is_admin_email(email text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (select 1 from private.owner_emails o where o.email = lower(is_admin_email.email));
+$$;
+
+-- Was callable via RPC: anyone could test guesses to find the owner's email.
+revoke execute on function public.is_admin_email(text) from anon, authenticated;
+
+-- 9. Suspended accounts can't write anything, effective immediately (the
+-- auth ban from block 1 only stops new sessions; a live token lasts up to
+-- 1h). Fires inside SECURITY DEFINER RPCs too. DELETE stays allowed so a
+-- suspended user can still remove their own content or delete the account.
+create or replace function public.block_suspended_writes()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if auth.uid() is not null
+     and exists (select 1 from public.profiles where id = auth.uid() and status = 'suspended') then
+    raise exception 'account suspended';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger catalog_items_block_suspended before insert or update on public.catalog_items
+  for each row execute function public.block_suspended_writes();
+-- Only content columns: like_count/comment_count updates come from other
+-- users' likes and from comment deletes, which must keep working.
+create trigger posts_block_suspended before insert or update of rating, review, visibility, mentions, mentions_all on public.posts
+  for each row execute function public.block_suspended_writes();
+create trigger likes_block_suspended before insert or update on public.likes
+  for each row execute function public.block_suspended_writes();
+create trigger comments_block_suspended before insert or update on public.comments
+  for each row execute function public.block_suspended_writes();
+create trigger friendships_block_suspended before insert or update on public.friendships
+  for each row execute function public.block_suspended_writes();
+create trigger follows_block_suspended before insert or update on public.follows
+  for each row execute function public.block_suspended_writes();
+create trigger feedback_block_suspended before insert or update on public.feedback_submissions
+  for each row execute function public.block_suspended_writes();
+
+-- 10. profiles.email always mirrors the real login email: users can't fake
+-- it (the admin panel shows it), and it now follows email changes.
+create or replace function public.enforce_profile_email()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.email is distinct from (select u.email from auth.users u where u.id = new.id) then
+    raise exception 'profile email must match the account email';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger profiles_enforce_email
+  before update of email on public.profiles
+  for each row execute function public.enforce_profile_email();
+
+create or replace function public.sync_profile_email()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.profiles set email = new.email where id = new.id;
+  return new;
+end;
+$$;
+
+create trigger on_auth_user_email_changed
+  after update of email on auth.users
+  for each row execute function public.sync_profile_email();
