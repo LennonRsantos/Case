@@ -70,6 +70,40 @@ async function signInAs(email, password) {
     const { data: bReadsPrivate } = await clientB.from('posts').select('*').eq('id', postId);
     log('private post invisible to non-owner', (bReadsPrivate ?? []).length === 0);
 
+    // 5b. Security hardening (20261112120000): attacker paths must all fail.
+    const { error: bLikesPrivate } = await clientB.rpc('toggle_like', { p_post_id: postId });
+    log('stranger CANNOT like a private post', !!bLikesPrivate, bLikesPrivate?.message);
+
+    const { error: bCommentsPrivate } = await clientB.rpc('add_comment', {
+      p_post_id: postId, p_text: 'sneaky', p_mentions: [], p_mentions_all: false,
+    });
+    log('stranger CANNOT comment on a private post', !!bCommentsPrivate, bCommentsPrivate?.message);
+
+    const { error: forgeErr } = await clientB.rpc('_notify_mentions', {
+      p_post_id: postId, p_actor_uid: uidA, p_actor_name: 'Fake', p_actor_avatar_url: null,
+      p_post_title: 'x', p_post_cover_url: 'x', p_mentions: [{ uid: uidB }], p_mentions_all: false, p_exclude: [],
+    });
+    log('_notify_mentions NOT callable via RPC', !!forgeErr, forgeErr?.message);
+
+    const { error: spoofPostErr } = await clientB.from('posts').insert({
+      author_uid: uidB, author_name: 'Equipe Oficial', media_type: 'movie', type: 'Filme',
+      title: 'x', cover_url: 'x', rating: 5, visibility: 'public',
+    });
+    log('direct posts insert blocked (no author spoofing)', !!spoofPostErr, spoofPostErr?.message);
+
+    await admin.from('profiles').update({ status: 'suspended' }).eq('id', uidB);
+    const { error: unsuspendErr } = await clientB.from('profiles').update({ status: 'active' }).eq('id', uidB);
+    log('user CANNOT change own status', !!unsuspendErr, unsuspendErr?.message);
+    const { data: authB } = await admin.auth.admin.getUserById(uidB);
+    log('suspension bans the auth user', !!authB?.user?.banned_until, authB?.user?.banned_until);
+    await admin.from('profiles').update({ status: 'active' }).eq('id', uidB);
+    const { data: authB2 } = await admin.auth.admin.getUserById(uidB);
+    log('reactivation lifts the ban', !authB2?.user?.banned_until || new Date(authB2.user.banned_until) < new Date(), authB2?.user?.banned_until);
+
+    const anonClient = createClient(URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
+    const { data: anonProfiles } = await anonClient.from('public_profiles').select('uid').limit(1);
+    log('public_profiles hidden from signed-out visitors', (anonProfiles ?? []).length === 0);
+
     // 6. friendship flow: A sends request, B accepts
     const [lo, hi] = uidA < uidB ? [uidA, uidB] : [uidB, uidA];
     const { error: frErr } = await clientA.from('friendships').insert({
