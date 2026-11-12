@@ -112,7 +112,8 @@ export default function App() {
 
   // @mention candidates are always the CURRENT user's own friends — a
   // mention can only ever point at someone this account is connected to,
-  // same trust boundary as the notification it creates (see firestore.rules).
+  // same trust boundary as the notification it creates (see the RLS policies in
+  // supabase/migrations/20260915184220_rls_policies.sql).
   const mentionCandidates: MentionCandidate[] = useMemo(
     () =>
       friends

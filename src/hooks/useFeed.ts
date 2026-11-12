@@ -115,7 +115,7 @@ export function useFeed(uid: string | null, friendUids: string[], limitCount = 6
 
 // Notification fan-out (new_post + @mentions) all happens server-side inside
 // the publish_post RPC, atomically with the insert — no separate client-side
-// notify calls needed (unlike the old Firestore writeBatch/best-effort loop).
+// notify calls needed.
 export async function publishPost(data: {
   tmdbId?: number;
   mediaType: "movie" | "tv";

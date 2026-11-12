@@ -47,7 +47,7 @@ async function uploadImage(
 
 // Best-effort: an old file being gone already, or the URL not pointing at
 // our own bucket (e.g. a leftover manually-typed URL from before uploads
-// existed, or a Firebase Storage URL left over from before the migration),
+// existed, or an old external URL from before the current storage setup),
 // should never block removing/replacing the file in the profile.
 async function deleteImage(bucket: "avatars" | "covers", url: string | undefined): Promise<void> {
   if (!url) return;

@@ -46,8 +46,7 @@ function profileToRow(user: User) {
 }
 
 async function fetchProfile(uid: string): Promise<User> {
-  // No race to worry about here (unlike the old Firebase flow, which had to
-  // create this doc itself after auth completed): handle_new_user() creates
+  // No race to worry about here: handle_new_user() creates
   // the row inside the SAME transaction as the auth.users insert, so it
   // already exists by the time any client can hold a session for this uid.
   const { data, error } = await supabase.from("profiles").select("*").eq("id", uid).single();
